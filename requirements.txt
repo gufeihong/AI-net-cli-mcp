@@ -1,0 +1,16 @@
+# 核心：MCP 服务端（含 FastMCP）
+mcp>=1.30.0
+
+# Telnet 传输
+telnetlib3>=4.0.5
+
+# Console 串口传输（可选，不装则串口工具不可用）
+pyserial>=3.5
+
+# SSH 传输（可选，不装则 ssh_connect 不可用）
+paramiko>=3.4.0
+
+# 仅 Web 控制台需要
+starlette>=0.37.0
+uvicorn>=0.30.0
+sse-starlette>=2.1.0

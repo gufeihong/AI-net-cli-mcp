@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# 控制台运行日志（含设备回显，不要提交）
+console/logs/
+*.jsonl
+
+# 本地配置（含账号密码）
+.env
+mcp.json
+*.local
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>网络设备实时控制台</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #0b0f14;
+    color: #cfdae3;
+    font-family: "Cascadia Mono", Consolas, "Microsoft YaHei", monospace;
+    font-size: 13px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px;
+    background: #121821;
+    border-bottom: 1px solid #1f2b36;
+    flex: 0 0 auto;
+  }
+  header h1 { font-size: 13px; font-weight: 600; margin: 0; color: #7fd1ff; letter-spacing: .5px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #52616b; flex: 0 0 auto; }
+  .dot.on { background: #35d07f; box-shadow: 0 0 8px #35d07f88; }
+  .dot.err { background: #ff5c5c; }
+  .chips { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+  .chip {
+    font-size: 11px; padding: 2px 8px; border-radius: 10px;
+    background: #182430; color: #86a3b8; border: 1px solid #22313f;
+    white-space: nowrap;
+  }
+  .chip b { color: #9fe3c0; font-weight: 600; }
+  .bar {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    padding: 8px 14px; background: #0e141b; border-bottom: 1px solid #182430;
+    flex: 0 0 auto;
+  }
+  input {
+    background: #111a23; border: 1px solid #22313f; color: #cfe3f2;
+    padding: 5px 8px; border-radius: 4px; font-family: inherit; font-size: 12px;
+    outline: none;
+  }
+  input:focus { border-color: #2f7ea8; }
+  input.host { width: 130px; }
+  input.port { width: 62px; }
+  input.user { width: 110px; }
+  input.pass { width: 120px; }
+  input.baud { width: 70px; }
+  select#transport, select.comport {
+    background: #111a23; border: 1px solid #22313f; color: #cfe3f2;
+    padding: 5px 6px; border-radius: 4px; font-family: inherit; font-size: 12px;
+    outline: none;
+  }
+  select.comport { width: 90px; }
+  button {
+    background: #1b4a63; color: #cfeaff; border: 1px solid #2b6d8f;
+    padding: 5px 12px; border-radius: 4px; cursor: pointer;
+    font-family: inherit; font-size: 12px;
+  }
+  button:hover { background: #23607f; }
+  button.ghost { background: transparent; color: #86a3b8; border-color: #22313f; }
+  button.ghost:hover { color: #cfdae3; border-color: #33505f; }
+  #term {
+    flex: 1 1 auto; overflow-y: auto; padding: 12px 16px 18px;
+    white-space: pre-wrap; word-break: break-all;
+    line-height: 1.6; background: #0b0f14;
+    font-size: var(--term-fs, 17px);
+  }
+  #term .tx { color: #4fc3f7; }
+  #term .tx .arrow { color: #2f7ea8; }
+  #term .tx .who { color: #8a6fd1; font-size: .8em; }
+  #term .sys { color: #7d8f9c; font-style: italic; }
+  #term .err { color: #ff8080; }
+  #term .rx { color: #cfdae3; }
+  #term .ok { color: #9fe3c0; }
+  /* ===== 关键信息高亮 ===== */
+  .h-ip     { color: #4dd0e1; font-weight: 600; }              /* IP / 掩码 / 网段 */
+  .h-if     { color: #ffb74d; }                                 /* 接口名 */
+  .h-num    { color: #ffd54f; }                                 /* 数字 / 计数 */
+  .h-pct    { color: #ff8a65; font-weight: 600; }               /* 带宽利用率 */
+  .h-up     { color: #66bb6a; font-weight: 700; }               /* UP */
+  .h-down   { color: #ef5350; font-weight: 700; }               /* DOWN */
+  .h-mac    { color: #f48fb1; }                                 /* MAC */
+  .h-time   { color: #78909c; }                                 /* 时间戳 */
+  .h-kw     { color: #b39ddb; font-weight: 600; }               /* 配置关键字 */
+  .h-err    { color: #ff5252; font-weight: 700; }               /* 报错 */
+  .h-prompt { color: #7fd1ff; font-weight: 600; }               /* 设备提示符 */
+  .footer {
+    display: flex; gap: 8px; padding: 8px 14px; background: #121821;
+    border-top: 1px solid #1f2b36; flex: 0 0 auto;
+  }
+  #cmd { flex: 1 1 auto; }
+  .zoom { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+  .zoom button { padding: 4px 9px; }
+  .zoom-val { font-size: 11px; color: #6f8798; min-width: 18px; text-align: center; }
+  .hint { color: #55697a; font-size: 11px; padding: 3px 14px 8px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 0 14px 10px; }
+  .legend .lg { color: #44586a; }
+  .legend span { font-size: 11px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span>
+  <h1>网络设备实时控制台</h1>
+  <div class="chips">
+    <span class="chip">厂商 <b id="c-vendor">—</b></span>
+    <span class="chip">提示符 <b id="c-prompt">—</b></span>
+    <span class="chip">视图 <b id="c-view">—</b></span>
+    <span class="chip" id="c-name">未连接</span>
+  </div>
+</header>
+
+<div class="bar">
+  <select id="transport" title="连接方式">
+    <option value="telnet">Telnet</option>
+    <option value="ssh">SSH</option>
+    <option value="serial">Console 串口</option>
+  </select>
+  <input class="host" id="host" placeholder="192.168.1.1">
+  <select id="comport" class="comport" style="display:none" title="串口"></select>
+  <input class="port" id="port" placeholder="23" value="23">
+  <input class="baud" id="baud" placeholder="9600" value="9600" style="display:none" title="波特率">
+  <input class="user" id="user" placeholder="用户名">
+  <input class="pass" id="pass" type="password" placeholder="密码">
+  <button id="btn-connect">连接</button>
+  <button class="ghost" id="btn-disconnect">断开</button>
+  <button class="ghost" id="btn-clear">清屏</button>
+  <span class="zoom">
+    <button class="ghost" id="btn-hl" title="开关关键信息高亮">高亮</button>
+    <button class="ghost" id="btn-font-down" title="缩小回显字号">A−</button>
+    <span class="zoom-val" id="font-val">17</span>
+    <button class="ghost" id="btn-font-up" title="放大回显字号">A+</button>
+  </span>
+</div>
+
+<div id="term"></div>
+
+<div class="footer">
+  <input id="cmd" placeholder="在这里输入命令，回车下发（与 AI 共用同一条会话）" autocomplete="off">
+  <button id="btn-send">发送</button>
+</div>
+<div class="hint">↑↓ 翻历史命令 · Ctrl+L 清屏 · 页面与 AI 看到的是同一条 telnet 会话</div>
+
+<script>
+const term = document.getElementById('term');
+const $ = id => document.getElementById(id);
+let atBottom = true;
+let lastSeq = 0;
+let hist = [];
+let histIdx = -1;
+
+term.addEventListener('scroll', () => {
+  atBottom = term.scrollTop + term.clientHeight >= term.scrollHeight - 24;
+});
+
+function scroll() {
+  if (atBottom) term.scrollTop = term.scrollHeight;
+}
+
+function block(cls, text) {
+  const d = document.createElement('div');
+  d.className = cls;
+  d.textContent = text;
+  term.appendChild(d);
+  scroll();
+  return d;
+}
+
+function txLine(cmd, who) {
+  const d = document.createElement('div');
+  d.className = 'tx';
+  const a = document.createElement('span'); a.className = 'arrow'; a.textContent = '→ ';
+  const t = document.createElement('span'); t.textContent = cmd;
+  d.appendChild(a); d.appendChild(t);
+  if (who && who !== 'user') {
+    const w = document.createElement('span'); w.className = 'who'; w.textContent = '  [' + who + ']';
+    d.appendChild(w);
+  }
+  term.appendChild(d);
+  scroll();
+}
+
+// ===== 关键字高亮引擎 =====
+// 规则顺序即优先级：同一位置先匹配到的胜出（IP 必须排在数字前）
+const HL_RULES = [
+  ['ip',     String.raw`\d{1,3}(?:\.\d{1,3}){3}(?:\/\d{1,2})?`],
+  ['time',   String.raw`\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2})?`],
+  ['mac',    String.raw`[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}`],
+  ['if',     String.raw`\b(?:Vlanif|GigabitEthernet|XGigabitEthernet|Eth-Trunk|LoopBack|InLoopBack|Tunnel|MEth|10GE|25GE|40GE|100GE|GE|XGE) ?\d[\w\/.:-]*`],
+  ['pct',    String.raw`\d+(?:\.\d+)?\s?%`],
+  ['prompt', String.raw`[<\[][A-Za-z0-9_.\/:-]{1,44}[>\]]`],
+  ['err',    String.raw`\b(?:Error|ERROR|Wrong|Unrecognized|unrecognized|Invalid|incomplete|ambiguous|failed|Failed|denied|Denied|Unreachable|unreachable)\b`],
+  ['kw',     String.raw`\b(?:interface|ip address|dhcp select|dhcp server|dhcp|sysname|acl|rule|undo|shutdown|description|return|quit|disable|enable)\b`],
+  ['state',  String.raw`(?:\*|\^|~)?\b(?:up|down|UP|DOWN|Up|Down)\b(?!\s+time|\s+date|\s+since)`],
+  ['num',    String.raw`\b\d+\b`],
+];
+const HL_CLASS = {
+  ip: 'h-ip', time: 'h-time', mac: 'h-mac', if: 'h-if', pct: 'h-pct',
+  prompt: 'h-prompt', err: 'h-err', kw: 'h-kw', state: 'h-up', num: 'h-num',
+};
+const HL_RE = new RegExp(HL_RULES.map(([n, s]) => `(?<${n}>${s})`).join('|'), 'gm');
+
+function esc(s) {
+  return s.replace(/[&<>]/g, c => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'));
+}
+
+function hl(raw) {
+  if (HL_OFF) return esc(raw);
+  let out = '', last = 0, m;
+  HL_RE.lastIndex = 0;
+  while ((m = HL_RE.exec(raw)) !== null) {
+    if (m[0].length === 0) { HL_RE.lastIndex++; continue; }
+    if (m.index > last) out += esc(raw.slice(last, m.index));
+    const g = m.groups || {};
+    let cls = null;
+    for (const [name] of HL_RULES) { if (g[name] !== undefined) { cls = HL_CLASS[name]; break; } }
+    // UP / DOWN / UP* 用状态色区分
+    if (cls === 'h-up' && /down/i.test(m[0])) cls = 'h-down';
+    out += `<span class="${cls}">${esc(m[0])}</span>`;
+    last = m.index + m[0].length;
+  }
+  out += esc(raw.slice(last));
+  return out;
+}
+
+// ===== 流式回显：缓冲原始文本 → rAF 合并渲染（防止逐字符重排卡顿） =====
+let rxNode = null;
+let rxPending = false;
+const rxRawMap = new WeakMap();
+const rxNodes = [];
+let HL_OFF = localStorage.getItem('nc_hl') === '0';
+
+function rxChunk(text) {
+  if (!rxNode) {
+    rxNode = document.createElement('div');
+    rxNode.className = 'rx';
+    term.appendChild(rxNode);
+    rxRawMap.set(rxNode, '');
+    rxNodes.push(rxNode);
+  }
+  rxRawMap.set(rxNode, (rxRawMap.get(rxNode) || '') + text);
+  if (!rxPending) { rxPending = true; requestAnimationFrame(flushRx); }
+}
+
+function flushRx() {
+  rxPending = false;
+  if (!rxNode) return;
+  rxNode.innerHTML = hl(rxRawMap.get(rxNode) || '');
+  scroll();
+}
+
+function setDot(state) {
+  const d = $('dot');
+  d.className = 'dot' + (state === 'on' ? ' on' : state === 'err' ? ' err' : '');
+}
+
+function applyStatus(s) {
+  $('c-vendor').textContent = s.vendor || '—';
+  $('c-prompt').textContent = s.prompt || '—';
+  $('c-view').textContent = s.view || '—';
+  $('c-name').textContent = s.connected ? (s.host + ':' + s.port) : '未连接';
+  setDot(s.connected ? 'on' : '');
+}
+
+function handle(ev) {
+  if (ev.seq && ev.seq <= lastSeq) return;
+  if (ev.seq) lastSeq = ev.seq;
+  switch (ev.type) {
+    case 'tx':
+      rxNode = null;
+      txLine(ev.text, ev.source);
+      break;
+    case 'rx':
+      rxChunk(ev.text);
+      break;
+    case 'session':
+      rxNode = null;
+      applyStatus({connected: true, vendor: ev.vendor, prompt: ev.prompt, view: ev.view, host: ev.host, port: ev.port});
+      block('ok', `[${ev.ts}] ${ev.text}  vendor=${ev.vendor}  prompt=${ev.prompt}`);
+      break;
+    case 'prompt':
+      $('c-prompt').textContent = ev.prompt || '—';
+      $('c-view').textContent = ev.view || '—';
+      break;
+    case 'info':
+      block('sys', `[${ev.ts}] ${ev.text}`);
+      break;
+    case 'err':
+      rxNode = null;
+      block('err', `[${ev.ts}] ${ev.text}`);
+      setDot('err');
+      break;
+    case 'clear':
+      term.innerHTML = ''; rxNode = null; rxNodes.length = 0; lastSeq = 0;
+      break;
+  }
+}
+
+const es = new EventSource('/api/stream');
+es.onmessage = e => { try { handle(JSON.parse(e.data)); } catch (_) {} };
+
+// 初始状态
+fetch('/api/status').then(r => r.json()).then(applyStatus).catch(() => {});
+
+async function connect() {
+  const transport = $('transport').value;
+  const body = {
+    transport,
+    username: $('user').value,
+    password: $('pass').value
+  };
+  if (transport === 'serial') {
+    body.host = $('comport').value;
+    body.port = parseInt($('baud').value || '9600', 10);
+    if (!body.host) { block('err', '请先选择串口（COM 口）'); return; }
+  } else {
+    body.host = $('host').value.trim();
+    body.port = parseInt($('port').value || (transport === 'ssh' ? '22' : '23'), 10);
+  }
+  localStorage.setItem('nc_user', body.username);
+  const where = transport === 'serial' ? `Console ${body.host}@${body.port}` : `${body.host}:${body.port}`;
+  block('sys', `[--:--:--] 连接 ${where} …`);
+  const r = await fetch('/api/connect', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  const j = await r.json();
+  if (!j.ok) { block('err', '连接失败：' + (j.error || r.status)); setDot('err'); }
+  else applyStatus(j);
+}
+
+/* ===== 连接方式切换 ===== */
+async function loadSerialPorts() {
+  try {
+    const r = await fetch('/api/serialports');
+    const j = await r.json();
+    const sel = $('comport');
+    sel.innerHTML = '';
+    const ports = (j.ports || []);
+    if (!ports.length) {
+      const o = document.createElement('option');
+      o.textContent = '未发现串口';
+      o.value = '';
+      sel.appendChild(o);
+    } else {
+      for (const p of ports) {
+        const o = document.createElement('option');
+        o.value = p.port;
+        o.textContent = p.port + (p.description ? ` · ${p.description}` : '');
+        sel.appendChild(o);
+      }
+    }
+  } catch (_) {}
+}
+$('transport').onchange = () => {
+  const t = $('transport').value;
+  const serial = t === 'serial';
+  $('host').style.display = serial ? 'none' : '';
+  $('port').style.display = serial ? 'none' : '';
+  $('comport').style.display = serial ? '' : 'none';
+  $('baud').style.display = serial ? '' : 'none';
+  if (serial) loadSerialPorts();
+  else {
+    const p = $('port');
+    if (t === 'ssh') { p.placeholder = '22'; if (!p.value || p.value === '23') p.value = '22'; }
+    else { p.placeholder = '23'; if (!p.value || p.value === '22') p.value = '23'; }
+  }
+};
+
+async function send() {
+  const cmd = $('cmd').value;
+  if (!cmd.trim()) return;
+  hist.push(cmd); histIdx = hist.length;
+  $('cmd').value = '';
+  const r = await fetch('/api/exec', {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({command: cmd, source: 'user'})});
+  if (!r.ok) { const t = await r.text(); block('err', '执行失败：' + t.slice(0, 200)); }
+  else rxNode = null;
+}
+
+$('btn-connect').onclick = connect;
+$('btn-disconnect').onclick = async () => {
+  await fetch('/api/disconnect', {method: 'POST'});
+  applyStatus({connected: false});
+  setDot('');
+};
+$('btn-clear').onclick = async () => { await fetch('/api/clear', {method: 'POST'}); };
+$('btn-send').onclick = send;
+$('cmd').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); send(); }
+  else if (e.key === 'ArrowUp') {
+    if (histIdx > 0) { histIdx--; $('cmd').value = hist[histIdx] || ''; }
+    e.preventDefault();
+  } else if (e.key === 'ArrowDown') {
+    if (histIdx < hist.length - 1) { histIdx++; $('cmd').value = hist[histIdx] || ''; }
+    else { histIdx = hist.length; $('cmd').value = ''; }
+    e.preventDefault();
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key.toLowerCase() === 'l') { e.preventDefault(); $('btn-clear').click(); }
+});
+$('user').value = localStorage.getItem('nc_user') || '';
+
+/* ===== 回显字号调节（12–30px，记住选择） ===== */
+const FS_KEY = 'nc_term_font';
+const FS_MIN = 12, FS_MAX = 30, FS_STEP = 1;
+let termFont = parseInt(localStorage.getItem(FS_KEY) || '17', 10);
+if (isNaN(termFont)) termFont = 17;
+
+function applyFont() {
+  termFont = Math.max(FS_MIN, Math.min(FS_MAX, termFont));
+  document.documentElement.style.setProperty('--term-fs', termFont + 'px');
+  $('font-val').textContent = termFont;
+  localStorage.setItem(FS_KEY, termFont);
+}
+$('btn-font-up').onclick = () => { termFont += FS_STEP; applyFont(); scroll(); };
+$('btn-font-down').onclick = () => { termFont -= FS_STEP; applyFont(); scroll(); };
+applyFont();
+
+/* Ctrl + 滚轮 缩放，Ctrl+0 复位 */
+term.addEventListener('wheel', e => {
+  if (!e.ctrlKey) return;
+  e.preventDefault();
+  termFont += e.deltaY < 0 ? FS_STEP : -FS_STEP;
+  applyFont();
+}, { passive: false });
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === '0') { e.preventDefault(); termFont = 17; applyFont(); }
+});
+
+/* ===== 高亮开关（立即重绘已显示内容） ===== */
+function applyHl() {
+  const btn = $('btn-hl');
+  btn.style.color = HL_OFF ? '#6f8798' : '#9fe3c0';
+  btn.style.borderColor = HL_OFF ? '#22313f' : '#2f6d55';
+  btn.textContent = HL_OFF ? '高亮' : '高亮·开';
+  localStorage.setItem('nc_hl', HL_OFF ? '0' : '1');
+  for (const n of rxNodes) n.innerHTML = hl(rxRawMap.get(n) || '');
+}
+$('btn-hl').onclick = () => { HL_OFF = !HL_OFF; applyHl(); scroll(); };
+applyHl();
+</script>
+<div class="hint legend">
+  <span class="lg">配色</span>
+  <span class="h-ip">IP / 网段</span>
+  <span class="h-if">接口名</span>
+  <span class="h-num">数字</span>
+  <span class="h-pct">利用率</span>
+  <span class="h-up">UP</span>
+  <span class="h-down">DOWN</span>
+  <span class="h-mac">MAC</span>
+  <span class="h-time">时间</span>
+  <span class="h-kw">配置关键字</span>
+  <span class="h-err">报错</span>
+  <span class="h-prompt">提示符</span>
+</div>
+</body>
+</html>

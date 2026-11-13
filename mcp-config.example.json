@@ -1,0 +1,11 @@
+{
+  "_comment": "把这段合并进 MCP 客户端配置（Claude Desktop: claude_desktop_config.json；WorkBuddy: ~/.workbuddy/mcp.json）。python 路径改成你自己的解释器绝对路径。",
+  "mcpServers": {
+    "net-cli-mcp": {
+      "command": "python",
+      "args": [
+        "/绝对路径/net-cli-mcp/server.py"
+      ]
+    }
+  }
+}
