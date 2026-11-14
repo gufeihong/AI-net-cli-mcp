@@ -1,0 +1,11 @@
+{
+  "_comment": "V2.0 安全入口。环境变量配置见 docs/security-hardening.md；替换为本机绝对路径。",
+  "mcpServers": {
+    "net-cli-mcp-v2": {
+      "command": "python",
+      "args": [
+        "/绝对路径/AI-net-cli-mcp/secure_server.py"
+      ]
+    }
+  }
+}
